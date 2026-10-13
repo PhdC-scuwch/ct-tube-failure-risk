@@ -1,0 +1,77 @@
+{
+  "description": "Settings of every run reported in the paper. reproduce.py reads this file; scripts/failrisk.py writes the settings of each run to <run>/config.json.",
+  "data": {
+    "inputs": {
+      "daily-B2": "primary: 43 daily engineered features + log scans per day + active-day flag + 13 failure precursors = 58 features",
+      "daily-A2": "without the failure precursors: 45 features"
+    },
+    "seq_days": 60,
+    "reference_period": "first 30 active days (>= 20 scans) of the tube's own log; every daily input is an offset from it",
+    "feature_scaling": "median and 1.4826 MAD of the training tubes (floor 0.1 SD), clipped to +-5",
+    "min_life_scans": 5000,
+    "min_days_before_failure": 1.0,
+    "labels": "y7 = failure within 7 days, y30 = failure within 30 days; failure = last record of the tube's log"
+  },
+  "protocols": {
+    "loo": "leave one tube out: 19 folds; in every fold 3 of the 18 remaining tubes are validation tubes and 15 are training clients",
+    "loho": "leave one hospital out: 3 folds (site map: tube -> hospital)",
+    "validation_tubes": "drawn per fold and seed: numpy.random.default_rng(1000 * seed + index of the test tube(s) in the sorted tube list), see val_split in scripts/failrisk.py",
+    "weibull_prior": "beta and eta fitted by maximum likelihood to the lives (scans) of the training and validation tubes of each fold"
+  },
+  "training": {
+    "seeds": [0, 1, 2],
+    "seq_days": 60,
+    "batch": 32,
+    "lr": 0.001,
+    "optimizer": "Adam (SCAFFOLD: SGD)",
+    "local_epochs": 1,
+    "max_rounds": 100,
+    "min_rounds": 20,
+    "patience": 10,
+    "early_stopping": "stop after 10 rounds without a relative improvement of the validation loss of at least 0.1 %; keep the round with the lowest validation loss",
+    "validation_tubes": 3,
+    "lambda_mono": 0.5,
+    "monotonicity_pairs": "same tube, age gap > 0.02 eta, |log workload gap| < 0.3",
+    "lambda_reg_default": 0.01,
+    "lambda_reg_grid": [0.01, 0.1, 1],
+    "dtg2_tau_grid": [0.02, 0.05, 0.1],
+    "dtg2_tau_default": 0.05,
+    "final_model": "ensemble selection over the grid members on the validation tubes (Caruana et al., 2004), then a causal moving average of the daily probabilities with a window of 1, 3, 7 (7 days) or 1, 3, 7, 14 days (30 days) chosen on the validation tubes"
+  },
+  "trend": {
+    "health_index": "relative filament current at identical (kV, mA, focus) settings, stable scans only, baseline from the first 50 scans of each setting, rolling median over 500 stable scans; HI = 1 - (1 - r) / D with D the median end-of-life decline of the training tubes",
+    "stage_bins": 100,
+    "groups_in_shared_range": 20,
+    "shared_range": "fine bins between the 1 % and 99 % quantiles of each client's counts",
+    "rate": "HI decrease per scan from a causal moving average (window 1 % of the log) and a lag of 0.5 % of the log"
+  },
+  "baselines": {
+    "fedprox_mu": 0.01,
+    "scaffold_lr": 0.05,
+    "cfl_warmup_rounds": 5,
+    "fedbn": "batch-normalization layers local; the held-out tube re-estimates its statistics from its own earlier days (strictly causal)",
+    "cfl": "one bipartition by cosine similarity of the client updates after 5 rounds; the held-out tube joins the cluster whose input centroid is nearest to the mean input of its earlier days"
+  },
+  "privacy": {
+    "dp_fedavg_clip": 2.0,
+    "dp_fedavg_noise_multipliers": [0, 0.5, 1, 2],
+    "delta": 0.001,
+    "accounting": "Renyi DP, integer orders, sampling rate 1, over the rounds actually run",
+    "trend_epsilons": [1, 0.1],
+    "trend_rate_clip": 0.05,
+    "trend_lag_records": 2000,
+    "trend_dp_draws": 100
+  },
+  "evaluation": {
+    "metrics": "tube-weighted AUC (each tube weighted equally), Brier score",
+    "bootstrap": 2000,
+    "confidence_intervals": "AUC difference on all tubes; 2.5th and 97.5th percentiles of a tube-level bootstrap",
+    "robustness_subset": "tubes whose log starts within the first 5 % of the life"
+  },
+  "variants": {
+    "main": ["prior", "fedavg-tuned", "dtg2-tuned", "dtg2-t0.02-tuned", "dtg2-t0.05-tuned", "dtg2-t0.1-tuned",
+             "central-tuned", "nophys"],
+    "supplementary": ["fedprox", "scaffold", "fedbn", "cfl", "dtg", "cdp0", "cdp0.5", "cdp1", "cdp2", "dtg2-dp1",
+                      "dtg2-dp0.1", "fedavg-m0", "fedbn-dtg2", "fedavg-eq-tuned", "dtg2-shuf-tuned"]
+  }
+}
